@@ -1,12 +1,31 @@
-import { Controller, Get } from '@nestjs/common';
-import { AppService } from './app.service';
+import { Controller, Get, Param, Post, Body, Put } from '@nestjs/common';
+import { DataService } from './data/data.service';
+import { Customer } from './data/customer.entity';
 
-@Controller()
+@Controller('customers')
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(private readonly dataService: DataService) {}
 
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  findAll(): Promise<Customer[]> {
+    return this.dataService.findAll();
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string): Promise<Customer> {
+    return this.dataService.findOne(+id);
+  }
+
+  @Post()
+  create(@Body() customer: Customer): Promise<Customer> {
+    return this.dataService.create(customer);
+  }
+
+  @Put(':id')
+  update(
+    @Param('id') id: string,
+    @Body() customer: Partial<Customer>,
+  ): Promise<Customer> {
+    return this.dataService.update(+id, customer);
   }
 }
