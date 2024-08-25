@@ -1,8 +1,8 @@
 import {
   Injectable,
+  OnModuleInit,
   NotFoundException,
   BadRequestException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -54,11 +54,16 @@ export class DataService implements OnModuleInit {
   }
 
   async update(id: number, customer: Partial<Customer>): Promise<Customer> {
-    const existingCustomer = await this.customerRepository.findOneBy({
-      email: customer.email,
-    });
-    if (existingCustomer) {
-      throw new BadRequestException('Customer with this email already exists');
+    await this.findOne(id);
+    if (customer.email) {
+      const existingCustomer = await this.customerRepository.findOneBy({
+        email: customer.email,
+      });
+      if (existingCustomer && existingCustomer.id !== id) {
+        throw new BadRequestException(
+          'Customer with this email already exists',
+        );
+      }
     }
     await this.customerRepository.update(id, customer);
     return this.findOne(id);

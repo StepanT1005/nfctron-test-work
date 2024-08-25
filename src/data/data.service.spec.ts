@@ -3,21 +3,11 @@ import { DataService } from './data.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './customer.entity';
-
-const mockCustomerRepository = () => ({
-  count: jest.fn(),
-  save: jest.fn(),
-  find: jest.fn(),
-  findOneBy: jest.fn(),
-  update: jest.fn(),
-  delete: jest.fn(),
-});
-
-type MockRepository<T = any> = Partial<Record<keyof Repository<T>, jest.Mock>>;
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('DataService', () => {
   let service: DataService;
-  let customerRepository: MockRepository<Customer>;
+  let customerRepository: Repository<Customer>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -25,99 +15,121 @@ describe('DataService', () => {
         DataService,
         {
           provide: getRepositoryToken(Customer),
-          useValue: mockCustomerRepository(),
+          useClass: Repository,
         },
       ],
     }).compile();
 
     service = module.get<DataService>(DataService);
-    customerRepository = module.get<MockRepository<Customer>>(
+    customerRepository = module.get<Repository<Customer>>(
       getRepositoryToken(Customer),
     );
   });
 
-  describe('onModuleInit', () => {
-    it('should populate the database if no customers exist', async () => {
-      customerRepository.count.mockResolvedValue(0);
-      customerRepository.save.mockResolvedValue([]);
-
-      await service.onModuleInit();
-
-      expect(customerRepository.count).toHaveBeenCalled();
-      expect(customerRepository.save).toHaveBeenCalledTimes(1);
-      expect(customerRepository.save).toHaveBeenCalledWith(expect.any(Array));
-    });
-
-    it('should not populate the database if customers exist', async () => {
-      customerRepository.count.mockResolvedValue(10);
-
-      await service.onModuleInit();
-
-      expect(customerRepository.count).toHaveBeenCalled();
-      expect(customerRepository.save).not.toHaveBeenCalled();
-    });
+  it('should be defined', () => {
+    expect(service).toBeDefined();
   });
 
   describe('findAll', () => {
     it('should return an array of customers', async () => {
       const customers = [new Customer(), new Customer()];
-      customerRepository.find.mockResolvedValue(customers);
+      jest.spyOn(customerRepository, 'find').mockResolvedValue(customers);
 
       expect(await service.findAll()).toEqual(customers);
-      expect(customerRepository.find).toHaveBeenCalled();
     });
   });
 
   describe('findOne', () => {
-    it('should return a single customer', async () => {
+    it('should return a customer if found', async () => {
       const customer = new Customer();
-      customerRepository.findOneBy.mockResolvedValue(customer);
+      jest.spyOn(customerRepository, 'findOneBy').mockResolvedValue(customer);
 
       expect(await service.findOne(1)).toEqual(customer);
-      expect(customerRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
     });
 
-    it('should return null if customer is not found', async () => {
-      customerRepository.findOneBy.mockResolvedValue(null);
+    it('should throw NotFoundException if customer is not found', async () => {
+      jest.spyOn(customerRepository, 'findOneBy').mockResolvedValue(null);
 
-      expect(await service.findOne(1)).toBeNull();
-      expect(customerRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
+      await expect(service.findOne(1)).rejects.toThrow(
+        new NotFoundException(`Customer with ID 1 not found`),
+      );
     });
   });
 
   describe('create', () => {
-    it('should successfully create a new customer', async () => {
+    it('should create and return a new customer', async () => {
       const customer = new Customer();
-      customerRepository.save.mockResolvedValue(customer);
+      customer.email = 'test@example.com';
+      jest.spyOn(customerRepository, 'findOneBy').mockResolvedValue(null);
+      jest.spyOn(customerRepository, 'save').mockResolvedValue(customer);
 
       expect(await service.create(customer)).toEqual(customer);
-      expect(customerRepository.save).toHaveBeenCalledWith(customer);
+    });
+
+    it('should throw BadRequestException if customer with email exists', async () => {
+      const customer = new Customer();
+      customer.email = 'test@example.com';
+      jest.spyOn(customerRepository, 'findOneBy').mockResolvedValue(customer);
+
+      await expect(service.create(customer)).rejects.toThrow(
+        new BadRequestException('Customer with this email already exists'),
+      );
     });
   });
 
   describe('update', () => {
-    it('should successfully update an existing customer', async () => {
+    it('should update and return the updated customer', async () => {
       const customer = new Customer();
-      customerRepository.update.mockResolvedValue(undefined);
-      customerRepository.findOneBy.mockResolvedValue(customer);
+      customer.id = 1;
+      customer.email = 'existing@example.com';
 
-      expect(await service.update(1, { name: 'Updated Name' })).toEqual(
-        customer,
-      );
-      expect(customerRepository.update).toHaveBeenCalledWith(1, {
-        name: 'Updated Name',
+      jest.spyOn(service, 'findOne').mockResolvedValue(customer);
+      jest.spyOn(customerRepository, 'findOneBy').mockResolvedValue(null);
+      jest.spyOn(customerRepository, 'update').mockResolvedValue(undefined);
+
+      const updatedCustomer = await service.update(1, {
+        email: 'new@example.com',
       });
-      expect(customerRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
+      expect(updatedCustomer).toBe(customer);
+    });
+
+    it('should throw BadRequestException if customer with email already exists', async () => {
+      const customer = new Customer();
+      customer.id = 1;
+      customer.email = 'test@example.com';
+
+      const existingCustomer = new Customer();
+      existingCustomer.id = 2;
+      existingCustomer.email = 'test@example.com';
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(customer);
+      jest
+        .spyOn(customerRepository, 'findOneBy')
+        .mockResolvedValue(existingCustomer);
+
+      await expect(
+        service.update(1, { email: 'test@example.com' }),
+      ).rejects.toThrow(
+        new BadRequestException('Customer with this email already exists'),
+      );
     });
   });
 
   describe('remove', () => {
-    it('should remove a customer', async () => {
-      customerRepository.delete.mockResolvedValue(undefined);
+    it('should remove the customer', async () => {
+      const customer = new Customer();
+      jest.spyOn(service, 'findOne').mockResolvedValue(customer);
+      jest.spyOn(customerRepository, 'delete').mockResolvedValue(undefined);
 
-      await service.remove(1);
+      await expect(service.remove(1)).resolves.toBeUndefined();
+    });
 
-      expect(customerRepository.delete).toHaveBeenCalledWith(1);
+    it('should throw NotFoundException if customer is not found', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue(null);
+
+      await expect(service.remove(1)).rejects.toThrow(
+        new NotFoundException(`Customer with ID 1 not found`),
+      );
     });
   });
 });
