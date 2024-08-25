@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './customer.entity';
@@ -31,19 +36,39 @@ export class DataService implements OnModuleInit {
   }
 
   async findOne(id: number): Promise<Customer> {
-    return await this.customerRepository.findOneBy({ id });
+    const customer = await this.customerRepository.findOneBy({ id });
+    if (!customer) {
+      throw new NotFoundException(`Customer with ID ${id} not found`);
+    }
+    return customer;
   }
 
   async create(customer: Customer): Promise<Customer> {
+    const existingCustomer = await this.customerRepository.findOneBy({
+      email: customer.email,
+    });
+    if (existingCustomer) {
+      throw new BadRequestException('Customer with this email already exists');
+    }
     return await this.customerRepository.save(customer);
   }
 
   async update(id: number, customer: Partial<Customer>): Promise<Customer> {
+    const existingCustomer = await this.customerRepository.findOneBy({
+      email: customer.email,
+    });
+    if (existingCustomer) {
+      throw new BadRequestException('Customer with this email already exists');
+    }
     await this.customerRepository.update(id, customer);
     return this.findOne(id);
   }
 
   async remove(id: number): Promise<void> {
+    const customer = await this.findOne(id);
+    if (!customer) {
+      throw new NotFoundException(`Customer with ID ${id} not found`);
+    }
     await this.customerRepository.delete(id);
   }
 }
